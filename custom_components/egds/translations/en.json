@@ -10,10 +10,10 @@
         }
       },
       "code": {
-        "title": "EGDS — SMS code",
+        "title": "ЕГДС — access code",
         "description": "{status}",
         "data": {
-          "code": "SMS code",
+          "code": "Code (from SMS/call/bot/email)",
           "resend": "Send the code again"
         }
       },
@@ -29,7 +29,8 @@
     "error": {
       "invalid_code": "Сервер отклонил код (подробности выше)",
       "sms_failed": "Сервер не выслал код (подробности выше)",
-      "cannot_connect": "Could not connect to the EGDS server"
+      "cannot_connect": "Could not connect to the EGDS server",
+      "delivery_unavailable": "No code delivery method is connected for this account (see details and instructions above)"
     },
     "abort": {
       "already_configured": "This phone is already added",

@@ -59,6 +59,17 @@ class EgdsAuthError(EgdsError):
     """Ошибка аутентификации (неверный код, истёкший токен)."""
 
 
+class EgdsDeliveryError(EgdsAuthError):
+    """Сервер не может доставить код: не подключён ни один канал.
+
+    ЕГДС доставляет код входа через: SMS/звонок, бота MAX, Telegram
+    или подтверждённый email. Если для аккаунта не подключено ничего,
+    сервер отвечает error=verification_method_unavailable.
+    Каналы подключаются в приложении (Настройки уведомлений)
+    или в мини-приложении lk.egdsk.ru (мессенджер MAX).
+    """
+
+
 class EgdsConnectionError(EgdsError):
     """Ошибка соединения с сервером."""
 
@@ -212,6 +223,8 @@ class EgdsClient:
                 _LOGGER.debug("oauth/token: %s %s", error, description)
                 if error == "invalid_grant":
                     raise EgdsAuthError(description or "Отказ авторизации")
+                if error == "verification_method_unavailable":
+                    raise EgdsDeliveryError(description or "Нет доступных способов доставки кода")
                 raise EgdsError(description or error)
         except EgdsError:
             raise

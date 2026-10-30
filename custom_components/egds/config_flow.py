@@ -20,7 +20,7 @@ from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import voluptuous as vol
 
-from .api import EgdsAuthError, EgdsClient, EgdsError, normalize_phone
+from .api import EgdsAuthError, EgdsClient, EgdsDeliveryError, EgdsError, normalize_phone
 from .const import (
     COOLDOWN,
     CONF_API_BASE,
@@ -39,6 +39,31 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+# Как включить доставку кода без личного кабинета на сайте (он доступен
+# только контактным лицам по договору):
+DELIVERY_HINT = (
+    "Код входа ЕГДС доставляет способом, подключённым для аккаунта: SMS или "
+    "звонок (код — последние 4 цифры номера звонившего), бот MAX, Telegram "
+    "или подтверждённый email. Если код не приходит, включите доставку "
+    "БЕЗ сайта: в приложении ЕГДС откройте «Настройки уведомлений» — "
+    "подтвердите email или укажите телефон в боте t.me/egdsk_bot; либо "
+    "войдите по коду на телефон в мини-приложении lk.egdsk.ru (мессенджер MAX)."
+)
+
+STATUS_NO_DELIVERY = (
+    "Сервер не выслал код: для аккаунта не подключён ни один способ "
+    "доставки. Включите его без сайта: в приложении ЕГДС «Настройки "
+    "уведомлений» — подтвердите email или подтвердите телефон в боте "
+    "t.me/egdsk_bot; либо войдите по коду на телефон в мини-приложении "
+    "lk.egdsk.ru (мессенджер MAX). Затем повторите запрос кода."
+)
+
+STATUS_SMS_BROKEN = (
+    "Сервер ЕГДС сейчас не может отправить код (сбой на его стороне). "
+    "Повторите запрос позже — кнопкой «Выслать код повторно» либо "
+    "заново добавив интеграцию."
+)
 
 STEP_USER_SCHEMA = vol.Schema(
     {
@@ -95,11 +120,7 @@ class EgdsConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
-        status = (
-            "Введите телефон как в приложении. Код придёт способом, "
-            "подключённым для аккаунта: SMS, бот MAX, Telegram "
-            "или email (настраивается на egdsk.ru)."
-        )
+        status = DELIVERY_HINT
         if user_input is not None:
             phone = normalize_phone(user_input[CONF_USERNAME])
             await self.async_set_unique_id(phone)
@@ -109,18 +130,25 @@ class EgdsConfigFlow(ConfigFlow, domain=DOMAIN):
             client = _make_client(self.hass, self.data)
             try:
                 await client.request_sms_code()
+            except EgdsDeliveryError as err:
+                errors["base"] = "delivery_unavailable"
+                status = STATUS_NO_DELIVERY
+                _LOGGER.debug("Нет каналов доставки: %s", err)
             except EgdsAuthError as err:
                 errors["base"] = "sms_failed"
-                # например: «Код не отправлен, так как нет доступных способов
-                # доставки. Подключите бота MAX или Telegram...»
-                status = f"Сервер не выслал код: {err}"
+                # например: «Сбой в работе сервера, попробуйте еще раз позже»
+                status = STATUS_SMS_BROKEN + f" Ответ сервера: {err}"
                 _LOGGER.debug("SMS не отправлено: %s", err)
             except EgdsError as err:
                 errors["base"] = "cannot_connect"
                 status = f"Ошибка связи: {err}"
                 _LOGGER.debug("Ошибка связи: %s", err)
             else:
-                self.data["code_status"] = "Код отправлен. Введите его ниже."
+                self.data["code_status"] = (
+                    "Код отправлен (SMS, звонок, бот или email — как настроено "
+                    "для аккаунта; код звонка — последние 4 цифры номера "
+                    "звонившего). Введите его ниже."
+                )
                 return await self.async_step_code()
         return self.async_show_form(
             step_id="user",
@@ -140,9 +168,12 @@ class EgdsConfigFlow(ConfigFlow, domain=DOMAIN):
                 client = _make_client(self.hass, self.data)
                 try:
                     await client.request_sms_code()
+                except EgdsDeliveryError as err:
+                    errors["base"] = "delivery_unavailable"
+                    status = STATUS_NO_DELIVERY
                 except EgdsAuthError as err:
                     errors["base"] = "sms_failed"
-                    status = f"Сервер не выслал код: {err}"
+                    status = STATUS_SMS_BROKEN + f" Ответ сервера: {err}"
                 except EgdsError as err:
                     errors["base"] = "cannot_connect"
                     status = f"Ошибка связи: {err}"
@@ -183,9 +214,12 @@ class EgdsConfigFlow(ConfigFlow, domain=DOMAIN):
             if user_input.get("resend"):
                 try:
                     await client.request_sms_code()
+                except EgdsDeliveryError as err:
+                    errors["base"] = "delivery_unavailable"
+                    status = STATUS_NO_DELIVERY
                 except EgdsAuthError as err:
                     errors["base"] = "sms_failed"
-                    status = f"Сервер не выслал код: {err}"
+                    status = STATUS_SMS_BROKEN + f" Ответ сервера: {err}"
                 except EgdsError as err:
                     errors["base"] = "cannot_connect"
                     status = f"Ошибка связи: {err}"
