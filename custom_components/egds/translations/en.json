@@ -21,26 +21,34 @@
         "title": "EGDS — Sign in again",
         "description": "{status}",
         "data": {
-          "code": "SMS code",
+          "code": "New code (SMS/call/bot/email)",
           "resend": "Send the code again"
         }
       }
     },
     "error": {
-      "invalid_code": "Сервер отклонил код (подробности выше)",
-      "sms_failed": "Сервер не выслал код (подробности выше)",
+      "invalid_code": "Server rejected the code (see details above)",
+      "sms_failed": "Server did not send the code (see details above)",
       "cannot_connect": "Could not connect to the EGDS server",
       "delivery_unavailable": "No code delivery method is connected for this account (see details and instructions above)"
     },
     "abort": {
       "already_configured": "This phone is already added",
-      "reauth_successful": "Re-authentication successful"
+      "reauth_successful": "Re-authentication successful",
+      "reauth_started": "Opening re-authentication — a new code has been sent, enter it"
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "EGDS options",
+        "menu_options": {
+          "options": "Polling, timing and video options",
+          "reauth": "Re-authenticate (new code)"
+        }
+      },
+      "options": {
+        "title": "Polling, timing and video options",
         "data": {
           "scan_interval": "Server polling interval, s",
           "opening_time": "\"Opening\", s",

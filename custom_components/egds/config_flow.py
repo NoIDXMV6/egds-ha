@@ -24,6 +24,7 @@ from .api import EgdsAuthError, EgdsClient, EgdsDeliveryError, EgdsError, normal
 from .const import (
     COOLDOWN,
     CONF_API_BASE,
+    CONF_TOKEN_EXPIRES,
     DEFAULT_COOLDOWN,
     DEFAULT_OPEN_DURATION,
     DEFAULT_OPENING_TIME,
@@ -41,22 +42,24 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 # Как включить доставку кода без личного кабинета на сайте (он доступен
-# только контактным лицам по договору):
+# только контактным лицам по договору). Подтверждено по приложению ЕГДС
+# 3.3.25: SMS и звонок доступны всем при входе; Telegram и email
+# подключаются в самом приложении («Настройки уведомлений»).
 DELIVERY_HINT = (
-    "Код входа ЕГДС доставляет способом, подключённым для аккаунта: SMS или "
-    "звонок (код — последние 4 цифры номера звонившего), бот MAX, Telegram "
-    "или подтверждённый email. Если код не приходит, включите доставку "
-    "БЕЗ сайта: в приложении ЕГДС откройте «Настройки уведомлений» — "
-    "подтвердите email или укажите телефон в боте t.me/egdsk_bot; либо "
-    "войдите по коду на телефон в мини-приложении lk.egdsk.ru (мессенджер MAX)."
+    "Код входа ЕГДС доставляет способом, подключённым для аккаунта. "
+    "SMS и звонок (код — последние 4 цифры номера звонившего) работают "
+    "у всех при входе. Если код не приходит, подключите другие каналы "
+    "БЕЗ сайта — в приложении ЕГДС: «Настройки уведомлений» → подтвердите "
+    "email («Запросить подтверждение EMail») и/или Telegram "
+    "(подтвердите телефон в боте t.me/egdsk_bot)."
 )
 
 STATUS_NO_DELIVERY = (
     "Сервер не выслал код: для аккаунта не подключён ни один способ "
-    "доставки. Включите его без сайта: в приложении ЕГДС «Настройки "
-    "уведомлений» — подтвердите email или подтвердите телефон в боте "
-    "t.me/egdsk_bot; либо войдите по коду на телефон в мини-приложении "
-    "lk.egdsk.ru (мессенджер MAX). Затем повторите запрос кода."
+    "доставки. Подключите без сайта, в приложении ЕГДС: «Настройки "
+    "уведомлений» → подтвердите email и/или Telegram (бот t.me/egdsk_bot). "
+    "Также попробуйте повторить запрос — при входе можно выбрать звонок: "
+    "код — последние 4 цифры номера звонившего. Затем повторите запрос кода."
 )
 
 STATUS_SMS_BROKEN = (
@@ -192,6 +195,8 @@ class EgdsConfigFlow(ConfigFlow, domain=DOMAIN):
                 else:
                     self.data["access_token"] = client.access_token
                     self.data["refresh_token"] = client.refresh_token
+                    if client.token_expires is not None:
+                        self.data[CONF_TOKEN_EXPIRES] = client.token_expires
                     return self.async_create_entry(title="ЕГДС", data=self.data)
         self.data["code_status"] = status
         return self.async_show_form(
@@ -203,12 +208,33 @@ class EgdsConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_reauth(self, entry_data: dict[str, Any]) -> ConfigFlowResult:
         self.data = dict(entry_data)
+        # Сразу высылаем новый код (как при первом входе) — пользователю
+        # остаётся только ввести его. Если доставка не настроена — покажем
+        # инструкцию вместо формы.
+        client = _make_client(self.hass, self.data)
+        try:
+            await client.request_sms_code()
+            self.data["code_status"] = (
+                "Новый код отправлен (SMS, звонок, бот или email — как "
+                "настроено для аккаунта; код звонка — последние 4 цифры "
+                "номера звонившего). Введите его ниже."
+            )
+        except EgdsDeliveryError:
+            self.data["code_status"] = STATUS_NO_DELIVERY
+        except EgdsError as err:
+            self.data["code_status"] = (
+                f"Не удалось выслать код автоматически: {err}. "
+                "Отметьте «Выслать код повторно» и попробуйте ещё раз."
+            )
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Reauth: запросить новый код и войти заново."""
+        """Reauth: ввести код (запрошен автоматически при старте)."""
         errors: dict[str, str] = {}
-        status = "Сессия истекла. Введите новый код доставки."
+        status = str(
+            self.data.get("code_status")
+            or "Сессия истекла. Введите новый код доставки."
+        )
         if user_input is not None:
             client = _make_client(self.hass, self.data)
             if user_input.get("resend"):
@@ -237,6 +263,8 @@ class EgdsConfigFlow(ConfigFlow, domain=DOMAIN):
                 else:
                     self.data["access_token"] = client.access_token
                     self.data["refresh_token"] = client.refresh_token
+                    if client.token_expires is not None:
+                        self.data[CONF_TOKEN_EXPIRES] = client.token_expires
                     entry = self._get_reauth_entry()
                     self.hass.config_entries.async_update_entry(entry, data=self.data)
                     await self.hass.config_entries.async_reload(entry.entry_id)
@@ -255,9 +283,14 @@ class EgdsConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class EgdsOptionsFlow(OptionsFlow):
-    """Настройки опроса, таймингов и видео."""
+    """Меню: параметры опроса и повторная авторизация без удаления."""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Меню настроек интеграции."""
+        return self.async_show_menu(step_id="init", menu_options=["options", "reauth"])
+
+    async def async_step_options(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Параметры опроса, таймингов и видео."""
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
         options = self.config_entry.options
@@ -270,6 +303,27 @@ class EgdsOptionsFlow(OptionsFlow):
             VIDEO_WIDTH: options.get(VIDEO_WIDTH, ""),
         }
         return self.async_show_form(
-            step_id="init",
+            step_id="options",
             data_schema=self.add_suggested_values_to_schema(OPTIONS_SCHEMA, defaults),
         )
+
+    async def async_step_reauth(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Запустить повторную авторизацию без удаления интеграции."""
+        entry = self.config_entry
+        try:
+            # HA ≥ 2024.2: штатный запуск reauth-flow (с дедупликацией)
+            entry.async_start_reauth(self.hass)
+        except AttributeError:
+            self.hass.async_create_task(
+                self.hass.config_entries.flow.async_init(
+                    DOMAIN,
+                    context={
+                        "source": "reauth",
+                        "entry_id": entry.entry_id,
+                        "unique_id": entry.unique_id,
+                        "title_placeholders": {},
+                    },
+                    data=entry.data,
+                )
+            )
+        return self.async_abort(reason="reauth_started")

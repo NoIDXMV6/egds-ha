@@ -22,6 +22,11 @@ DEFAULT_TIMEOUT = 30
 
 # Конфигурация
 CONF_API_BASE = "api_base"
+CONF_TOKEN_EXPIRES = "token_expires"
+
+# Проактивное обновление access_token за N секунд до истечения
+# (вместо ожидания 401 — меньше отказов и лишних запросов)
+PROACTIVE_REFRESH_MARGIN = 120
 
 # Опции
 SCAN_INTERVAL = "scan_interval"

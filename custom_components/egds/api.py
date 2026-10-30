@@ -28,7 +28,7 @@ import base64
 import logging
 import re
 import time
-from typing import Any
+from typing import Any, Callable
 
 from aiohttp import ClientError, ClientSession, ClientTimeout
 
@@ -190,6 +190,12 @@ class EgdsClient:
         self.token_expires: float | None = None
         self.base_token: str | None = None
 
+        # Колбэк сохранения токенов (назначается координатором): сервер ЕГДС
+        # ротонирует refresh_token при каждом обновлении — свежий токен надо
+        # сразу сохранять в запись конфигурации, иначе после рестарта HA
+        # refresh-цепочка рвётся и требуется повторный вход по SMS.
+        self.on_tokens_update: Callable[[dict[str, Any]], None] | None = None
+
         basic = base64.b64encode(f"{CLIENT_ID}:{CLIENT_SECRET}".encode()).decode()
         self._oauth_headers = {
             "Authorization": f"Basic {basic}",
@@ -317,6 +323,18 @@ class EgdsClient:
                 self.token_expires = time.time() + float(expires)
             except (TypeError, ValueError):
                 self.token_expires = None
+        # Сообщаем наверх (координатор сохранит токены в запись конфигурации)
+        if self.on_tokens_update is not None:
+            try:
+                self.on_tokens_update(
+                    {
+                        "access_token": self.access_token,
+                        "refresh_token": self.refresh_token,
+                        "token_expires": self.token_expires,
+                    }
+                )
+            except Exception:  # noqa: BLE001 — сохранение не должно ломать API
+                _LOGGER.exception("Не удалось сохранить обновлённые токены")
 
     # ------------------------------------------------------------------ #
     # Данные и команды

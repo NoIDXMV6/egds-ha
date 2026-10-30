@@ -47,6 +47,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await coordinator.async_config_entry_first_refresh()
 
     entry.runtime_data = coordinator
+    # Persist токенов мог произойти при первом refresh (до регистрации
+    # слушателя) — сбрасываем флаг, чтобы последующие изменения опций
+    # гарантированно перезагружали интеграцию
+    coordinator.suppress_reload = False
 
     if not hass.services.has_service(DOMAIN, "open_barrier"):
         hass.services.async_register(
@@ -64,5 +68,15 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Перезагрузка при изменении опций."""
+    """Перезагрузка при изменении записи.
+
+    Координатор сам сохраняет обновлённые refresh-токены в запись
+    (suppress_reload) — в этом случае перезагрузка не нужна: клиент уже
+    работает с новыми токенами. Перезагружаем только при реальном
+    изменении (опции, повторная авторизация).
+    """
+    coordinator = entry.runtime_data
+    if getattr(coordinator, "suppress_reload", False):
+        coordinator.suppress_reload = False
+        return
     await hass.config_entries.async_reload(entry.entry_id)
