@@ -95,6 +95,11 @@ class EgdsConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
+        status = (
+            "Введите телефон как в приложении. Код придёт способом, "
+            "подключённым для аккаунта: SMS, бот MAX, Telegram "
+            "или email (настраивается на egdsk.ru)."
+        )
         if user_input is not None:
             phone = normalize_phone(user_input[CONF_USERNAME])
             await self.async_set_unique_id(phone)
@@ -106,58 +111,95 @@ class EgdsConfigFlow(ConfigFlow, domain=DOMAIN):
                 await client.request_sms_code()
             except EgdsAuthError as err:
                 errors["base"] = "sms_failed"
+                # например: «Код не отправлен, так как нет доступных способов
+                # доставки. Подключите бота MAX или Telegram...»
+                status = f"Сервер не выслал код: {err}"
                 _LOGGER.debug("SMS не отправлено: %s", err)
             except EgdsError as err:
                 errors["base"] = "cannot_connect"
+                status = f"Ошибка связи: {err}"
                 _LOGGER.debug("Ошибка связи: %s", err)
             else:
+                self.data["code_status"] = "Код отправлен. Введите его ниже."
                 return await self.async_step_code()
-        return self.async_show_form(step_id="user", data_schema=STEP_USER_SCHEMA, errors=errors)
+        return self.async_show_form(
+            step_id="user",
+            data_schema=STEP_USER_SCHEMA,
+            errors=errors or None,
+            description_placeholders={"status": status},
+        )
 
     async def async_step_code(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
+        status = str(
+            self.data.get("code_status")
+            or "Введите код. Если код не пришёл — отметьте «Выслать код повторно»."
+        )
         if user_input is not None:
             if user_input.get("resend"):
                 client = _make_client(self.hass, self.data)
                 try:
                     await client.request_sms_code()
-                except EgdsError:
+                except EgdsAuthError as err:
                     errors["base"] = "sms_failed"
+                    status = f"Сервер не выслал код: {err}"
+                except EgdsError as err:
+                    errors["base"] = "cannot_connect"
+                    status = f"Ошибка связи: {err}"
+                else:
+                    status = "Код выслан повторно."
             if "base" not in errors:
                 client = _make_client(self.hass, self.data)
                 try:
                     await client.login_with_code(user_input["code"])
-                except EgdsAuthError:
+                except EgdsAuthError as err:
                     errors["base"] = "invalid_code"
-                except EgdsError:
+                    status = f"Сервер отклонил код: {err}"
+                except EgdsError as err:
                     errors["base"] = "cannot_connect"
+                    status = f"Ошибка связи: {err}"
                 else:
                     self.data["access_token"] = client.access_token
                     self.data["refresh_token"] = client.refresh_token
                     return self.async_create_entry(title="ЕГДС", data=self.data)
-        return self.async_show_form(step_id="code", data_schema=STEP_CODE_SCHEMA, errors=errors)
+        self.data["code_status"] = status
+        return self.async_show_form(
+            step_id="code",
+            data_schema=STEP_CODE_SCHEMA,
+            errors=errors or None,
+            description_placeholders={"status": status},
+        )
 
     async def async_step_reauth(self, entry_data: dict[str, Any]) -> ConfigFlowResult:
         self.data = dict(entry_data)
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Reauth: запросить новый SMS-код и войти заново."""
+        """Reauth: запросить новый код и войти заново."""
         errors: dict[str, str] = {}
+        status = "Сессия истекла. Введите новый код доставки."
         if user_input is not None:
             client = _make_client(self.hass, self.data)
             if user_input.get("resend"):
                 try:
                     await client.request_sms_code()
-                except EgdsError:
+                except EgdsAuthError as err:
                     errors["base"] = "sms_failed"
+                    status = f"Сервер не выслал код: {err}"
+                except EgdsError as err:
+                    errors["base"] = "cannot_connect"
+                    status = f"Ошибка связи: {err}"
+                else:
+                    status = "Код выслан повторно."
             if "base" not in errors:
                 try:
                     await client.login_with_code(user_input["code"])
-                except EgdsAuthError:
+                except EgdsAuthError as err:
                     errors["base"] = "invalid_code"
-                except EgdsError:
+                    status = f"Сервер отклонил код: {err}"
+                except EgdsError as err:
                     errors["base"] = "cannot_connect"
+                    status = f"Ошибка связи: {err}"
                 else:
                     self.data["access_token"] = client.access_token
                     self.data["refresh_token"] = client.refresh_token
@@ -165,7 +207,12 @@ class EgdsConfigFlow(ConfigFlow, domain=DOMAIN):
                     self.hass.config_entries.async_update_entry(entry, data=self.data)
                     await self.hass.config_entries.async_reload(entry.entry_id)
                     return self.async_abort(reason="reauth_successful")
-        return self.async_show_form(step_id="reauth_confirm", data_schema=STEP_CODE_SCHEMA, errors=errors)
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=STEP_CODE_SCHEMA,
+            errors=errors or None,
+            description_placeholders={"status": status},
+        )
 
     @staticmethod
     @callback

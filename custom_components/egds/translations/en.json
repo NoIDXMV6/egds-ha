@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "EGDS — Sign in",
-        "description": "Enter your phone number (same as in the EGDS app). An SMS code will be sent to it.",
+        "description": "{status}",
         "data": {
           "username": "Phone (e.g. +7 999 123-45-67)",
           "api_base": "API base URL (production by default)"
@@ -11,7 +11,7 @@
       },
       "code": {
         "title": "EGDS — SMS code",
-        "description": "Enter the code from the SMS. If it didn't arrive, tick \"resend\".",
+        "description": "{status}",
         "data": {
           "code": "SMS code",
           "resend": "Send the code again"
@@ -19,7 +19,7 @@
       },
       "reauth_confirm": {
         "title": "EGDS — Sign in again",
-        "description": "The session has expired. Enter a new SMS code.",
+        "description": "{status}",
         "data": {
           "code": "SMS code",
           "resend": "Send the code again"
@@ -27,8 +27,8 @@
       }
     },
     "error": {
-      "invalid_code": "Wrong or expired code",
-      "sms_failed": "Could not send SMS — check the phone number and try again later",
+      "invalid_code": "Сервер отклонил код (подробности выше)",
+      "sms_failed": "Сервер не выслал код (подробности выше)",
       "cannot_connect": "Could not connect to the EGDS server"
     },
     "abort": {
