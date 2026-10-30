@@ -1,0 +1,10 @@
+open_barrier:
+  name: Открыть шлагбаум
+  description: >-
+    Отправляет серверу ЕГДС команду открытия КПУ
+    (POST /mobile1/barrier/open/{id}).
+    Повторные команды ограничены интервалом (по умолчанию 20 с).
+  target:
+    entity:
+      integration: egds
+      domain: [button, cover]

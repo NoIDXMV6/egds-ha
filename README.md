@@ -1,0 +1,128 @@
+# Интеграция «ЕГДС» для Home Assistant
+
+![Баннер](docs/banner.png)
+
+Управление шлагбаумами (КПУ) и просмотр живого видео с камер сервиса
+**ЕГДС** (`client.egdsk.ru`) из Home Assistant.
+
+Интеграция построена на протоколе, восстановленном обратной разработкой
+официального приложения **ЕГДС 3.3.25** (Android, пакет
+`ru.egds.EgdsMobile`, XAPK от APKPure). Приложение — .NET MAUI; управляемые
+сборки извлечены из `libassembly-store.so` (формат XABA/XALZ), логика
+восстановлена по IL-коду и строкам `EgdsMaui.dll`, ключевые запросы
+проверены живыми вызовами сервера.
+
+---
+
+## Протокол (кратко)
+
+| Что | Как |
+|---|---|
+| Хост API | `https://client.egdsk.ru` |
+| Аутентификация | OAuth2, `POST /oauth/token`, `Content-Type: application/x-www-form-urlencoded` |
+| Клиент | `Authorization: Basic base64("AndroidApp_1.3:Secret#1")` |
+| Выслать SMS | `grant_type=sms&phone_number={телефон}` |
+| Вход | `grant_type=password&username={телефон}&password={код из SMS}` |
+| Ответ входа | JSON: `access_token`, `refresh_token`, `token_expires`, `base_token`, `start_demo`, `course_url` |
+| Обновление токена | `grant_type=refresh_token&refresh_token={rt}` |
+| Список КПУ | `GET /mobile1/barrier/addresses`, `Authorization: Bearer {access_token}` |
+| Открыть | `{endpoint}/mobile1/barrier/open/{id}`, Bearer-токен |
+| Видео | `https://{host}:{port}/rsapi/snapshot?id={Guid}` — кадр; `.../rsapi/mjpeg?id={Guid}&framerate=..&viewSize=..` — поток; авторизация `Basic {Login}:{Password}` камеры |
+
+Структура адресов: `Address{Id, Name, Barriers:[EBarrier{Id, Number,
+GroupName, Name, Cameras:[Camera{Id, Name, Host, Port, Guid, Login,
+Password}]}]}` — интеграция разбирает ответ без учёта регистра ключей
+и поддерживает обёртки `{data: [...]}`.
+
+Демо-режим приложения использует телефон `0001234567`.
+
+## Возможности
+
+| Сущность | Описание |
+|---|---|
+| `button.*_otkryt` | Кнопка «Открыть» для каждого доступного вам КПУ |
+| `cover.*_shlagbaum` | Шлагбаум как cover: команда открытия, «предполагаемое» состояние (открывается → открыто → закрыто) |
+| `camera.*_kamera` | Живая камера КПУ: MJPEG-поток (`rsapi/mjpeg`) и JPEG-кадры (`rsapi/snapshot`), Basic-авторизация камеры |
+
+- Сервис `egds.open_barrier` — открыть шлагбаум из автоматизаций.
+- Автоматическое обновление токена по `refresh_token` (без вашего участия).
+- При окончательном истечении сессии — reauth-flow: HA сам запросит новый
+  SMS-код.
+- Защита от повторных команд (20 секунд, настраивается).
+- Опции: интервал опроса, тайминги состояния, кулдаун, framerate/viewSize
+  видеопотока.
+
+## Установка
+
+### Через HACS (рекомендуется)
+
+[![Открыть в HACS](https://img.shields.io/badge/HACS-Установить-0366d6?logo=homeassistant&logoColor=white)](https://my.home-assistant.io/redirect/hacs_repository/?owner=NoIDXMV6&repository=egds-ha&category=integration)
+
+1. Установите [HACS](https://hacs.xyz/docs/use/download/download/), если ещё не установлен.
+2. **HACS → ⋮ → Добавить свой репозиторий (Custom repository)**.
+3. Вставьте адрес: `https://github.com/NoIDXMV6/egds-ha`, категория — **Интеграция**.
+4. Установите «ЕГДС (шлагбаумы)» и перезапустите Home Assistant.
+5. **Настройки → Устройства и службы → Добавить интеграцию → ЕГДС**.
+
+### Вручную
+
+1. Скопируйте папку `custom_components/egds` в `config/custom_components/`
+   вашего Home Assistant (через Samba/Studio Code Server или git).
+2. Перезапустите Home Assistant.
+3. **Настройки → Устройства и службы → Добавить интеграцию → ЕГДС**.
+4. Введите телефон (как в приложении) → придёт SMS → введите код.
+5. Готово: на каждый КПУ добавятся устройство, кнопка, шлагбаум и камера.
+
+Требования: Home Assistant 2024.x–2025.x. ffmpeg не нужен — камера
+отдаёт MJPEG напрямую.
+
+## Использование в автоматизациях
+
+```yaml
+automation:
+  - alias: Открыть шлагбаум по прибытии
+    triggers:
+      - trigger: device_tracker
+        entity_id: device_tracker.my_phone
+        to: "home"
+    actions:
+      - action: button.press
+        target:
+          entity_id: button.ul_tveretskaya_otkryt
+
+# или через фирменный сервис:
+      - action: egds.open_barrier
+        target:
+          entity_id: cover.ul_tveretskaya_shlagbaum
+```
+
+Карточка камеры в Lovelace (живой поток):
+
+```yaml
+type: picture-entity
+entity: camera.ul_tveretskaya_kamera
+show_name: true
+show_state: false
+```
+
+## Как это устроено
+
+- `api.py` — клиент: OAuth2-гранты, Bearer-запросы к `/mobile1`,
+  разбор адресов, парсинг MJPEG по JPEG-маркерам (FFD8FF…FFD9).
+- `coordinator.py` — опрос раз в `scan_interval`, кулдаун команд.
+- `config_flow.py` — SMS-вход и reauth.
+- `camera.py` — прокси MJPEG: кадры сервера заворачиваются в
+  `multipart/x-mixed-replace` и отдаются в браузер.
+- Ключи шифрования хранилища приложения (`Secret#1` как client_secret и
+  константа тестового режима `ACE33955…`) используются только так, как их
+  использует само приложение (заголовок Basic у /oauth/token).
+
+## Ограничения
+
+- Состояние шлагбаума сервер не отдаёт — оно «предполагаемое» (как в
+  приложении).
+- Закрытия протокол не предусматривает (только открытие).
+- `token_expires`/`base_token` используются по назначению: refresh
+  выполняется при 401, повторный SMS-вход — при недействительном
+  refresh-токене.
+- Интеграция для личного использования на собственном аккаунте.

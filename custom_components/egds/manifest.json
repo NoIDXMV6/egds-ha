@@ -1,0 +1,20 @@
+{
+  "domain": "egds",
+  "name": "ЕГДС (шлагбаумы)",
+  "codeowners": [
+    "@NoIDXMV6"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "camera"
+  ],
+  "documentation": "https://github.com/NoIDXMV6/egds-ha",
+  "integration_type": "hub",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/NoIDXMV6/egds-ha/issues",
+  "loggers": [
+    "custom_components.egds"
+  ],
+  "requirements": [],
+  "version": "1.0.0"
+}
