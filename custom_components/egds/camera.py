@@ -31,6 +31,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .api import EgdsError, JPEG_END, JPEG_START
 from .const import DOMAIN, MANUFACTURER, MODEL_CAMERA
 from .coordinator import EgdsCoordinator
+from .diag import warn_limited
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -139,7 +140,17 @@ class EgdsBarrierCamera(CoordinatorEntity, Camera):
                     + b"\r\n"
                 )
         except (EgdsError, ConnectionResetError, asyncio.CancelledError) as err:
-            _LOGGER.debug("Поток %s прерван: %s", self.entity_id, err)
+            if isinstance(err, asyncio.CancelledError):
+                raise
+            warn_limited(
+                _LOGGER,
+                f"mjpeg_{self.entity_id}",
+                "MJPEG-поток %s прерван: %s: %s "
+                "(подробности в журнале интеграции egds)",
+                self.entity_id,
+                type(err).__name__,
+                err,
+            )
         finally:
             await response.write_eof()
         return response

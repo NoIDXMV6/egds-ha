@@ -42,6 +42,7 @@ from .const import (
     URL_API_BASE,
     URL_OAUTH,
 )
+from .diag import warn_limited
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -177,6 +178,7 @@ class EgdsClient:
         video_framerate: int | None = 2,
         video_viewsize: str | None = None,
         video_scheme: str = "https",
+        video_ssl_verify: bool = False,
     ) -> None:
         self._session = session
         self._phone = normalize_phone(phone)
@@ -184,6 +186,10 @@ class EgdsClient:
         self._framerate = video_framerate
         self._viewsize = video_viewsize
         self._video_scheme = video_scheme.rstrip(":/")
+        # Сертификаты камер почти всегда самоподписанные (хост — IP),
+        # поэтому по умолчанию их проверка выключена — как в приложении.
+        # Влияет только на запросы к камерам, API-сервер проверяется всегда.
+        self._video_ssl_verify = video_ssl_verify
 
         self.access_token: str | None = access_token
         self.refresh_token: str | None = refresh_token
@@ -383,6 +389,10 @@ class EgdsClient:
         guid = cam.get("guid")
         return f"{self._video_scheme}://{host}:{port}/rsapi/{mode}?id={guid}"
 
+    def _cam_ssl(self) -> object:
+        """Параметр ssl для запросов к камере (None — проверять, False — нет)."""
+        return None if self._video_ssl_verify else False
+
     def snapshot_url(self, cam: dict[str, Any]) -> str:
         """URL JPEG-кадра камеры."""
         return self._cam_url(cam, "snapshot")
@@ -402,14 +412,30 @@ class EgdsClient:
         headers = {"Authorization": f"Basic {self._cam_basic(cam)}"}
         try:
             async with self._session.get(
-                url, headers=headers, timeout=ClientTimeout(total=DEFAULT_TIMEOUT)
+                url,
+                headers=headers,
+                timeout=ClientTimeout(total=DEFAULT_TIMEOUT),
+                ssl=self._cam_ssl(),
             ) as resp:
                 if resp.status != 200:
-                    _LOGGER.debug("Снапшот %s: HTTP %s", url, resp.status)
+                    warn_limited(
+                        _LOGGER,
+                        f"snap_http_{url}",
+                        "Снимок камеры %s — HTTP %s (кадр не получен)",
+                        url,
+                        resp.status,
+                    )
                     return None
                 data = await resp.read()
         except (ClientError, asyncio.TimeoutError, OSError) as err:
-            _LOGGER.debug("Снапшот %s: %s", url, err)
+            warn_limited(
+                _LOGGER,
+                f"snap_err_{url}",
+                "Снимок камеры %s не удался: %s: %s",
+                url,
+                type(err).__name__,
+                err,
+            )
             return None
         if data[:3] == JPEG_START:
             return data
@@ -431,7 +457,10 @@ class EgdsClient:
         headers = {"Authorization": f"Basic {self._cam_basic(cam)}"}
         buffer = b""
         async with self._session.get(
-            url, headers=headers, timeout=ClientTimeout(total=None, sock_read=30)
+            url,
+            headers=headers,
+            timeout=ClientTimeout(total=None, sock_read=30),
+            ssl=self._cam_ssl(),
         ) as resp:
             if resp.status != 200:
                 raise EgdsError(f"Поток камеры: HTTP {resp.status}")

@@ -30,12 +30,14 @@ from .const import (
     DEFAULT_OPENING_TIME,
     DEFAULT_POLL_INTERVAL,
     DEFAULT_VIDEO_FRAMERATE,
+    DEFAULT_VIDEO_SSL_VERIFY,
     DOMAIN,
     OPEN_DURATION,
     OPENING_TIME,
     SCAN_INTERVAL,
     URL_API_BASE,
     VIDEO_FRAMERATE,
+    VIDEO_SSL_VERIFY,
     VIDEO_WIDTH,
 )
 
@@ -100,6 +102,9 @@ OPTIONS_SCHEMA = vol.Schema(
             vol.Coerce(int), vol.Range(min=1, max=10)
         ),
         vol.Optional(VIDEO_WIDTH, default=""): str,
+        vol.Required(
+            VIDEO_SSL_VERIFY, default=DEFAULT_VIDEO_SSL_VERIFY
+        ): bool,
     }
 )
 
@@ -334,6 +339,7 @@ class EgdsOptionsFlow(OptionsFlow):
             COOLDOWN: options.get(COOLDOWN, DEFAULT_COOLDOWN),
             VIDEO_FRAMERATE: options.get(VIDEO_FRAMERATE, DEFAULT_VIDEO_FRAMERATE),
             VIDEO_WIDTH: options.get(VIDEO_WIDTH, ""),
+            VIDEO_SSL_VERIFY: options.get(VIDEO_SSL_VERIFY, DEFAULT_VIDEO_SSL_VERIFY),
         }
         return self.async_show_form(
             step_id="options",

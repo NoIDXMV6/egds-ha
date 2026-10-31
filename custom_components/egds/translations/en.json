@@ -56,7 +56,8 @@
           "open_duration": "\"Open\", s",
           "cooldown": "Pause between commands, s",
           "video_framerate": "MJPEG framerate",
-          "video_width": "Stream viewSize (empty = not sent)"
+          "video_width": "Stream viewSize (empty = not sent)",
+          "video_ssl_verify": "Verify camera TLS certificates (usually off)"
         }
       }
     }

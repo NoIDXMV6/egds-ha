@@ -35,6 +35,7 @@ OPEN_DURATION = "open_duration"
 COOLDOWN = "cooldown"
 VIDEO_FRAMERATE = "video_framerate"
 VIDEO_WIDTH = "video_width"
+VIDEO_SSL_VERIFY = "video_ssl_verify"
 
 DEFAULT_POLL_INTERVAL = 300
 DEFAULT_OPENING_TIME = 10       # секунд "открывается" (исходное положение)
@@ -42,3 +43,4 @@ DEFAULT_OPEN_DURATION = 20      # сколько секунд считается
 DEFAULT_COOLDOWN = 20           # защита от повторной команды
 DEFAULT_VIDEO_FRAMERATE = 2     # кадр/с для MJPEG
 DEFAULT_VIDEO_WIDTH = ""        # пусто — размер не передаётся (как у сервера)
+DEFAULT_VIDEO_SSL_VERIFY = False  # сертификаты камер самоподписанные (как в приложении)

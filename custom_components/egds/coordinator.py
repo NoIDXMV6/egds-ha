@@ -35,6 +35,7 @@ from .const import (
     DEFAULT_OPENING_TIME,
     DEFAULT_POLL_INTERVAL,
     DEFAULT_VIDEO_FRAMERATE,
+    DEFAULT_VIDEO_SSL_VERIFY,
     DEFAULT_VIDEO_WIDTH,
     DOMAIN,
     OPEN_DURATION,
@@ -43,6 +44,7 @@ from .const import (
     SCAN_INTERVAL,
     URL_API_BASE,
     VIDEO_FRAMERATE,
+    VIDEO_SSL_VERIFY,
     VIDEO_WIDTH,
 )
 
@@ -62,6 +64,9 @@ class EgdsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             api_base=entry.data.get("api_base") or URL_API_BASE,
             video_framerate=entry.options.get(VIDEO_FRAMERATE, DEFAULT_VIDEO_FRAMERATE),
             video_viewsize=entry.options.get(VIDEO_WIDTH, DEFAULT_VIDEO_WIDTH) or None,
+            video_ssl_verify=entry.options.get(
+                VIDEO_SSL_VERIFY, DEFAULT_VIDEO_SSL_VERIFY
+            ),
         )
         # Восстановить срок действия токена, если он был сохранён
         saved_expires = entry.data.get(CONF_TOKEN_EXPIRES)

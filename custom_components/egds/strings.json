@@ -56,7 +56,8 @@
           "open_duration": "«Открыто», сек",
           "cooldown": "Пауза между командами, сек",
           "video_framerate": "Кадров/с в MJPEG-потоке",
-          "video_width": "viewSize потока (пусто — не передавать)"
+          "video_width": "viewSize потока (пусто — не передавать)",
+          "video_ssl_verify": "Проверять TLS-сертификаты камер (обычно выключено)"
         }
       }
     }
