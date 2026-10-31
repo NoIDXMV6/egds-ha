@@ -121,12 +121,43 @@ class EgdsConfigFlow(ConfigFlow, domain=DOMAIN):
     def __init__(self) -> None:
         self.data: dict[str, Any] = {}
 
+    # ------------------------------------------------------------------ #
+    # Зависшие попытки настройки
+    # ------------------------------------------------------------------ #
+    @callback
+    def _async_abort_stale_flows(self, unique_id: str) -> None:
+        """Прервать зависшие потоки настройки с тем же аккаунтом.
+
+        Незавершённый flow (закрыли окно с кодом, код не пришёл, HA
+        перезапускали) остаётся «в работе» и переживает рестарты Home
+        Assistant. Пока он жив, каждая новая попытка добавления
+        обрывалась с already_in_progress. Прерываем старые потоки,
+        чтобы настройку можно было начать заново.
+        """
+        flow_mgr = self.hass.config_entries.flow
+        for progress in flow_mgr.async_progress_by_handler(DOMAIN):
+            if isinstance(progress, dict):
+                flow_id = progress.get("flow_id")
+                ctx = progress.get("context") or {}
+            else:  # на случай, если в будущих HA flow станет объектом
+                flow_id = getattr(progress, "flow_id", None)
+                ctx = getattr(progress, "context", None) or {}
+            if not flow_id or flow_id == getattr(self, "flow_id", None):
+                continue
+            if ctx.get("unique_id") == unique_id:
+                _LOGGER.debug("Прерываю зависший flow настройки %s", flow_id)
+                flow_mgr.async_abort(flow_id)
+
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         status = DELIVERY_HINT
         if user_input is not None:
             phone = normalize_phone(user_input[CONF_USERNAME])
-            await self.async_set_unique_id(phone)
+            # Сначала убираем зависшие попытки настройки этого же аккаунта,
+            # затем привязываем flow: иначе async_set_unique_id обрывает
+            # поток с already_in_progress.
+            self._async_abort_stale_flows(phone)
+            await self.async_set_unique_id(phone, raise_on_progress=False)
             self._abort_if_unique_id_configured()
             self.data = dict(user_input)
             self.data[CONF_USERNAME] = phone
@@ -197,6 +228,8 @@ class EgdsConfigFlow(ConfigFlow, domain=DOMAIN):
                     self.data["refresh_token"] = client.refresh_token
                     if client.token_expires is not None:
                         self.data[CONF_TOKEN_EXPIRES] = client.token_expires
+                    # аккаунт могли настроить из другого окна, пока ждали код
+                    self._abort_if_unique_id_configured()
                     return self.async_create_entry(title="ЕГДС", data=self.data)
         self.data["code_status"] = status
         return self.async_show_form(

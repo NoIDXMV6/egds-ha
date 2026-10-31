@@ -35,7 +35,8 @@
     "abort": {
       "already_configured": "This phone is already added",
       "reauth_successful": "Re-authentication successful",
-      "reauth_started": "Opening re-authentication — a new code has been sent, enter it"
+      "reauth_started": "Opening re-authentication — a new code has been sent, enter it",
+      "already_in_progress": "Setup of this account is already in progress in another window. Finish it or restart Home Assistant — v1.0.4 clears stuck flows automatically."
     }
   },
   "options": {
