@@ -15,8 +15,6 @@
   "loggers": [
     "custom_components.egds"
   ],
-  "requirements": [
-    "cryptography>=3.4"
-  ],
+  "requirements": [],
   "version": "1.0.9"
 }
