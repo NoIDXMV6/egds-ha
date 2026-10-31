@@ -101,12 +101,16 @@ class EgdsBarrierCamera(CoordinatorEntity, Camera):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        return {
+        attrs = {
             "camera_guid": self._cam.get("guid"),
             "camera_host": self._cam.get("host"),
+            "camera_port": self._cam.get("port"),
+            "camera_url": self.coordinator.client.snapshot_url(self._cam),
             "barrier_id": self._barrier.get("barrier_id"),
             "address_name": self._barrier.get("address_name"),
         }
+        # URL без учётных данных — атрибуты видны в интерфейсе
+        return attrs
 
     # ------------------------------------------------------------------ #
     async def async_camera_image(
