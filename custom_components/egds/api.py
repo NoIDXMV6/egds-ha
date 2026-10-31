@@ -12,12 +12,14 @@
   - GET  /mobile1/barrier/addresses               — адреса с шлагбаумами
     (Bearer-токен): Address{Id, Name, Barriers:[EBarrier{Id, Number,
     GroupName, Name, Cameras:[Camera{Id, Name, Host, Port, Guid, Login,
-    Password}]}]};
+    Password}]}]} — Password камеры зашифрован ("b64данные;b64IV",
+    AES-256-CBC, ключ PBKDF2 от "OurSecretKey#1" — см. decrypt_camera_password);
   - /mobile1/barrier/open/{id}                    — открыть шлагбаум
     (Bearer-токен);
   - видео: https://{host}:{port}/rsapi/snapshot?id={Guid} — JPEG-кадр,
     https://{host}:{port}/rsapi/mjpeg?id={Guid}&framerate=..&viewSize=..
-    — MJPEG-поток; авторизация Basic {Login}:{Password} камеры.
+    — MJPEG-поток; авторизация Basic {Login}:{расшифрованный Password}
+    камеры (Snapshot.CheckPassword в приложении).
 
 Модуль не зависит от Home Assistant и может тестироваться отдельно.
 """
@@ -25,6 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import logging
 import re
 import time
@@ -75,6 +78,61 @@ class EgdsConnectionError(EgdsError):
     """Ошибка соединения с сервером."""
 
 
+# ---------------------------------------------------------------------- #
+# Дешифрование пароля камеры (восстановлено из EgdsMaui.dll 3.3.25)
+#
+# Сервер отдаёт Password камеры в виде "base64(шифротекст);base64(IV)".
+# Приложение расшифровывает его перед Basic-авторизацией на камере
+# (Snapshot.CheckPassword -> SecureStringExtensions.Decrypt):
+#   ключ = PBKDF2-HMAC-SHA1("OurSecretKey#1", соль 45344E0D394A5613,
+#          300 итераций, 32 байта) — Rfc2898DeriveBytes в CreateKey;
+#   AES-256-CBC + PKCS7, результат — UTF-8 строка.
+# Без расшифровки камера отвечает HTTP 401.
+# ---------------------------------------------------------------------- #
+CAM_KEY_PASSWORD = b"OurSecretKey#1"
+CAM_KEY_SALT = bytes.fromhex("45344e0d394a5613")
+CAM_KEY_ITERATIONS = 300
+CAM_KEY_LENGTH = 32
+
+
+def _camera_key() -> bytes:
+    """32-байтный ключ AES (считается один раз, результат кэшируется)."""
+    global _CAM_KEY
+    if _CAM_KEY is None:
+        _CAM_KEY = hashlib.pbkdf2_hmac(
+            "sha1", CAM_KEY_PASSWORD, CAM_KEY_SALT, CAM_KEY_ITERATIONS, CAM_KEY_LENGTH
+        )
+    return _CAM_KEY
+
+
+_CAM_KEY: bytes | None = None
+
+
+def decrypt_camera_password(stored: str | None) -> str | None:
+    """Расшифровать Password камеры; при неожиданном формате вернуть как есть.
+
+    Формат от сервера: "base64(данные);base64(IV)". Если строка не
+    расшифровывается (другой формат/открытый пароль) — возвращаем
+    исходное значение: в старых сборках пароль мог передаваться открыто.
+    """
+    if not stored or ";" not in stored:
+        return stored
+    try:
+        data_b64, iv_b64 = str(stored).split(";", 1)
+        raw = base64.b64decode(data_b64)
+        iv = base64.b64decode(iv_b64)
+        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+        from cryptography.hazmat.primitives.padding import PKCS7
+
+        decryptor = Cipher(algorithms.AES(_camera_key()), modes.CBC(iv)).decryptor()
+        padded = decryptor.update(raw) + decryptor.finalize()
+        unpadder = PKCS7(128).unpadder()
+        plain = unpadder.update(padded) + unpadder.finalize()
+        return plain.decode("utf-8")
+    except Exception:  # noqa: BLE001 — не умеем расшифровать: пробуем как есть
+        return stored
+
+
 def normalize_phone(phone: str) -> str:
     """Привести телефон к виду 7XXXXXXXXXX (как в приложении)."""
     digits = "".join(ch for ch in str(phone) if ch.isdigit())
@@ -118,7 +176,11 @@ def parse_cameras(item: Any) -> list[dict[str, Any]]:
             "port": _case_insensitive(cam, "port"),
             "guid": _case_insensitive(cam, "guid", "guid_id", "camera_guid"),
             "login": _case_insensitive(cam, "login", "user", "username"),
-            "password": _case_insensitive(cam, "password", "pass"),
+            # Password приходит зашифрованным ("b64;b64") — расшифровываем,
+            # как это делает приложение перед Basic-авторизацией
+            "password": decrypt_camera_password(
+                _case_insensitive(cam, "password", "pass")
+            ),
         }
         if entry["guid"] is None and entry["id"] is not None:
             entry["guid"] = entry["id"]
