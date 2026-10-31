@@ -131,14 +131,55 @@ automation:
           entity_id: cover.ul_tveretskaya_shlagbaum
 ```
 
-Карточка камеры в Lovelace (живой поток):
+## Вывод видео на панель (Lovelace)
+
+Для каждой камеры КПУ создаётся сущность «Камера» с entity_id вида
+`camera.<адрес>_kamera`. ffmpeg не нужен — интеграция отдаёт MJPEG-поток
+камеры как есть.
+
+### 1. Быстрая проверка (без Lovelace)
+
+- Боковая панель **Медиа** → раздел **Камеры** → выберите нужный КПУ.
+- Либо: **Настройки → Устройства и службы → ЕГДС → устройство → Камера** —
+  клик по сущности открывает диалог с живым видео.
+
+### 2. Карточка с живым видео
+
+UI: **Изменить панель → Добавить карточку → «Изображение сущности»
+(Picture Entity)** → выберите свою камеру `camera.…`.
 
 ```yaml
 type: picture-entity
-entity: camera.ul_tveretskaya_kamera
+entity: camera.ul_tveretskaya_kamera   # подставьте свой entity_id
+camera_view: live
 show_name: true
 show_state: false
 ```
+
+### 3. Видео + кнопка «Открыть» одной карточкой
+
+```yaml
+type: vertical-stack
+cards:
+  - type: picture-entity
+    entity: camera.ul_tveretskaya_kamera
+    camera_view: live
+    show_state: false
+  - type: button
+    name: Открыть шлагбаум
+    icon: mdi:boom-gate-arrow-up-outline
+    entity: button.ul_tveretskaya_otkryt
+    tap_action:
+      action: toggle
+```
+
+### 4. Что важно знать
+
+- Поток включается по запросу: пока никто не смотрит, интеграция не
+  держит соединение с камерой; при закрытии карточки поток закрывается.
+- Трансляция на ТВ (`camera.play_stream`, Chromecast) не поддерживается —
+  сущность камеры не объявляет признак `STREAM`.
+- Если у КПУ нет камеры, сущность камеры не создаётся.
 
 ## Как это устроено
 
