@@ -6,7 +6,10 @@
   — MJPEG-поток (сырые JPEG-кадры подряд).
 
 Авторизация: Basic {Login}:{Password} — параметры приходят в ответе
-/mobile1/barrier/addresses для каждой камеры.
+/mobile1/barrier/addresses для каждой камеры. Сервер ротонирует эти
+учётные данные (приложение перечитывает их перед показом видео), поэтому
+сущность каждый запрос берёт свежую карточку камеры из данных координатора,
+а при 401 клиент дополнительно перечитывает их и повторяет запрос.
 
 Реализация:
 - camera_image() — одиночный JPEG-кадр (snapshot);
@@ -106,6 +109,9 @@ class EgdsBarrierCamera(CoordinatorEntity, Camera):
             "camera_host": self._cam.get("host"),
             "camera_port": self._cam.get("port"),
             "camera_url": self.coordinator.client.snapshot_url(self._cam),
+            "credentials_present": bool(
+                self._cam.get("login") and self._cam.get("password")
+            ),
             "barrier_id": self._barrier.get("barrier_id"),
             "address_name": self._barrier.get("address_name"),
         }
@@ -113,12 +119,29 @@ class EgdsBarrierCamera(CoordinatorEntity, Camera):
         return attrs
 
     # ------------------------------------------------------------------ #
+    def _current_cam(self) -> dict[str, Any]:
+        """Свежая карточка камеры из последнего опроса координатора.
+
+        Сервер ЕГДС ротонирует учётные данные камер (в приложении их
+        перечитывают перед показом видео). Словарь, полученный при старте,
+        устаревает — камера отвечает HTTP 401. Поэтому перед каждым
+        снимком/потоком ищем камеру по GUID в свежих данных координатора.
+        """
+        guid = str(self._cam.get("guid") or "")
+        for barrier in (self.coordinator.data or {}).get("barriers", []):
+            if str(barrier.get("barrier_id")) != str(self._barrier.get("barrier_id")):
+                continue
+            for cam in barrier.get("cameras", []):
+                if str(cam.get("guid") or "") == guid:
+                    return cam
+        return self._cam
+
     async def async_camera_image(
         self, width: int | None = None, height: int | None = None
     ) -> bytes | None:
         """Одиночный JPEG-кадр (rsapi/snapshot)."""
         async with self._frame_lock:
-            frame = await self.coordinator.client.fetch_snapshot(self._cam)
+            frame = await self.coordinator.client.fetch_snapshot(self._current_cam())
             if frame:
                 self._frame = frame
             return self._frame
@@ -134,7 +157,9 @@ class EgdsBarrierCamera(CoordinatorEntity, Camera):
         )
         await response.prepare(request)
         try:
-            async for frame in self.coordinator.client.iter_mjpeg_frames(self._cam):
+            async for frame in self.coordinator.client.iter_mjpeg_frames(
+                self._current_cam()
+            ):
                 self._frame = frame
                 await response.write(
                     b"--frameboundary\r\n"

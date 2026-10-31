@@ -201,6 +201,10 @@ class EgdsClient:
         # сразу сохранять в запись конфигурации, иначе после рестарта HA
         # refresh-цепочка рвётся и требуется повторный вход по SMS.
         self.on_tokens_update: Callable[[dict[str, Any]], None] | None = None
+        # Сервер ротонирует и пароли камер (в приложении ReVideoLoader
+        # периодически пересинхронизирует учётные данные: _isRefreshing,
+        # _syncTimestamp). Здесь перечитывание защищается от параллелизма.
+        self._cred_lock = asyncio.Lock()
 
         basic = base64.b64encode(f"{CLIENT_ID}:{CLIENT_SECRET}".encode()).decode()
         self._oauth_headers = {
@@ -377,6 +381,64 @@ class EgdsClient:
     # ------------------------------------------------------------------ #
     # Видео
     # ------------------------------------------------------------------ #
+    async def refresh_camera_credentials(self, cam: dict[str, Any]) -> bool:
+        """Перечитать адреса и обновить данные камеры (в т.ч. пароль).
+
+        Сервер ЕГДС ротонирует учётные данные камер: приложение перечитывает
+        их перед показом видео. Интеграция делает то же при HTTP 401/403 от
+        камеры. Словарь cam обновляется на месте, чтобы и координатор, и
+        сущность камеры увидели свежие значения.
+        """
+        guid = str(cam.get("guid") or "")
+        async with self._cred_lock:
+            try:
+                barriers = await self.get_addresses()
+            except EgdsError as err:
+                warn_limited(
+                    _LOGGER,
+                    f"cam_refresh_{guid}",
+                    "Не удалось перечитать учётные данные камеры %s: %s",
+                    guid,
+                    err,
+                )
+                return False
+            for barrier in barriers:
+                for fresh in barrier.get("cameras", []):
+                    if str(fresh.get("guid") or "") != guid:
+                        continue
+                    changed = (
+                        str(fresh.get("login")) != str(cam.get("login"))
+                        or str(fresh.get("password")) != str(cam.get("password"))
+                    )
+                    cam.update(fresh)
+                    if changed:
+                        _LOGGER.info(
+                            "Учётные данные камеры %s обновлены — сервер ЕГДС "
+                            "ротирует пароли камер",
+                            guid,
+                        )
+                    return True
+        warn_limited(
+            _LOGGER,
+            f"cam_gone_{guid}",
+            "Камера %s исчезла из ответа сервера при перечитывании "
+            "учётных данных",
+            guid,
+        )
+        return False
+
+    @staticmethod
+    def _warn_missing_creds(cam: dict[str, Any], url: str) -> None:
+        """Предупредить, если сервер не прислал Login/Password камеры."""
+        if not cam.get("login") or not cam.get("password"):
+            warn_limited(
+                _LOGGER,
+                f"nocreds_{url}",
+                "Сервер ЕГДС не прислал Login/Password для камеры %s — "
+                "камера ответит HTTP 401 (учётные данные обязательны)",
+                url,
+            )
+
     @staticmethod
     def _cam_basic(cam: dict[str, Any]) -> str:
         login = str(cam.get("login") or "")
@@ -407,35 +469,58 @@ class EgdsClient:
         return url
 
     async def fetch_snapshot(self, cam: dict[str, Any]) -> bytes | None:
-        """Получить JPEG-кадр камеры (Basic-авторизация)."""
+        """Получить JPEG-кадр камеры (Basic-авторизация).
+
+        При 401/403 учётные данные камеры могли ротироваться сервером —
+        перечитываем /addresses и пробуем ещё раз один раз.
+        """
         url = self.snapshot_url(cam)
-        headers = {"Authorization": f"Basic {self._cam_basic(cam)}"}
-        try:
-            async with self._session.get(
-                url,
-                headers=headers,
-                timeout=ClientTimeout(total=DEFAULT_TIMEOUT),
-                ssl=self._cam_ssl(),
-            ) as resp:
-                if resp.status != 200:
-                    warn_limited(
-                        _LOGGER,
-                        f"snap_http_{url}",
-                        "Снимок камеры %s — HTTP %s (кадр не получен)",
-                        url,
-                        resp.status,
-                    )
-                    return None
-                data = await resp.read()
-        except (ClientError, asyncio.TimeoutError, OSError) as err:
-            warn_limited(
-                _LOGGER,
-                f"snap_err_{url}",
-                "Снимок камеры %s не удался: %s: %s",
-                url,
-                type(err).__name__,
-                err,
-            )
+        self._warn_missing_creds(cam, url)
+        data = None
+        for attempt in (1, 2):
+            headers = {"Authorization": f"Basic {self._cam_basic(cam)}"}
+            try:
+                async with self._session.get(
+                    url,
+                    headers=headers,
+                    timeout=ClientTimeout(total=DEFAULT_TIMEOUT),
+                    ssl=self._cam_ssl(),
+                ) as resp:
+                    if resp.status in (401, 403):
+                        if attempt == 1 and await self.refresh_camera_credentials(cam):
+                            continue
+                        warn_limited(
+                            _LOGGER,
+                            f"snap_auth_{url}",
+                            "Камера %s отвергла учётные данные (HTTP %s) — "
+                            "Login/Password не подошли даже после перечитывания; "
+                            "проверьте камеру в приложении ЕГДС и на сервере",
+                            url,
+                            resp.status,
+                        )
+                        return None
+                    if resp.status != 200:
+                        warn_limited(
+                            _LOGGER,
+                            f"snap_http_{url}",
+                            "Снимок камеры %s — HTTP %s (кадр не получен)",
+                            url,
+                            resp.status,
+                        )
+                        return None
+                    data = await resp.read()
+            except (ClientError, asyncio.TimeoutError, OSError) as err:
+                warn_limited(
+                    _LOGGER,
+                    f"snap_err_{url}",
+                    "Снимок камеры %s не удался: %s: %s",
+                    url,
+                    type(err).__name__,
+                    err,
+                )
+                return None
+            break
+        if data is None:
             return None
         if data[:3] == JPEG_START:
             return data
@@ -453,32 +538,41 @@ class EgdsClient:
         Сервер (как и в приложении) шлёт сырые JPEG-кадры подряд либо
         multipart — оба варианта обрабатываются одинаково.
         """
-        url = self.stream_url(cam)
-        headers = {"Authorization": f"Basic {self._cam_basic(cam)}"}
-        buffer = b""
-        async with self._session.get(
-            url,
-            headers=headers,
-            timeout=ClientTimeout(total=None, sock_read=30),
-            ssl=self._cam_ssl(),
-        ) as resp:
-            if resp.status != 200:
-                raise EgdsError(f"Поток камеры: HTTP {resp.status}")
-            async for chunk in resp.content.iter_chunked(65536):
-                buffer += chunk
-                while True:
-                    start = buffer.find(JPEG_START)
-                    if start < 0:
-                        buffer = buffer[-2:]
-                        break
-                    end = buffer.find(JPEG_END, start + 3)
-                    if end < 0:
-                        if start > 0:
-                            buffer = buffer[start:]
-                        break
-                    frame = buffer[start : end + 2]
-                    buffer = buffer[end + 2 :]
-                    yield frame
+        for attempt in (1, 2):
+            url = self.stream_url(cam)
+            headers = {"Authorization": f"Basic {self._cam_basic(cam)}"}
+            buffer = b""
+            async with self._session.get(
+                url,
+                headers=headers,
+                timeout=ClientTimeout(total=None, sock_read=30),
+                ssl=self._cam_ssl(),
+            ) as resp:
+                if resp.status in (401, 403):
+                    if attempt == 1 and await self.refresh_camera_credentials(cam):
+                        continue
+                    raise EgdsError(
+                        f"Поток камеры: HTTP {resp.status} — камера отвергла "
+                        "учётные данные (Login/Password) даже после перечитывания"
+                    )
+                if resp.status != 200:
+                    raise EgdsError(f"Поток камеры: HTTP {resp.status}")
+                async for chunk in resp.content.iter_chunked(65536):
+                    buffer += chunk
+                    while True:
+                        start = buffer.find(JPEG_START)
+                        if start < 0:
+                            buffer = buffer[-2:]
+                            break
+                        end = buffer.find(JPEG_END, start + 3)
+                        if end < 0:
+                            if start > 0:
+                                buffer = buffer[start:]
+                            break
+                        frame = buffer[start : end + 2]
+                        buffer = buffer[end + 2 :]
+                        yield frame
+        return
 
 
 def _extract_error(text: str) -> str | None:
