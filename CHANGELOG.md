@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.5
+
+- **Иконки бренда в составе интеграции.** Начиная с Home Assistant 2026.3
+  (Brands Proxy API) custom-интеграции возят свои иконки в собственном
+  каталоге `brand/` — репозиторий home-assistant/brands новые
+  custom-интеграции больше не принимает. В `custom_components/egds/brand/`
+  добавлены icon.png / icon@2x.png / logo.png / logo@2x.png (256/512 px,
+  PNG с прозрачностью).
+- В CI снят `ignore: brands`: проверка brand-ассетов HACS Action теперь
+  проходит полностью, без отключённых проверок (условие включения в
+  каталог HACS по умолчанию — hacs/default).
+
 ## 1.0.4
 
 - **Профилактика ошибки `already_in_progress` при добавлении интеграции**
