@@ -57,7 +57,11 @@
           "cooldown": "Pause between commands, s",
           "video_framerate": "MJPEG framerate",
           "video_width": "Stream viewSize (empty = not sent)",
-          "video_ssl_verify": "Verify camera TLS certificates (usually off)"
+          "video_ssl_verify": "Verify camera TLS certificates (usually off)",
+          "restream_enabled": "Local video restream for NVR (Frigate)"
+        },
+        "data_description": {
+          "restream_enabled": "Serves the camera live stream at http://homeassistant:8123/api/egds/restream/… (token protected) for Frigate detection. The ready-to-use address appears in the camera attributes (frigate_input)."
         }
       }
     }

@@ -22,6 +22,7 @@ from homeassistant.helpers.event import async_track_point_in_utc_time
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
+from .brand import brand_icon_url
 from .const import DOMAIN, MANUFACTURER, MODEL_BARRIER
 from .coordinator import EgdsCoordinator
 from .entity_registry import register_open_entity, unregister_open_entity
@@ -50,6 +51,7 @@ class EgdsBarrierCover(CoordinatorEntity, CoverEntity):
     _attr_supported_features = CoverEntityFeature.OPEN
     _attr_assumed_state = True
     _attr_icon = "mdi:boom-gate"
+    _attr_entity_picture = brand_icon_url()
 
     def __init__(
         self,

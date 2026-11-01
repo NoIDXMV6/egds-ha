@@ -32,8 +32,19 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .api import EgdsError, JPEG_END, JPEG_START
-from .const import DOMAIN, MANUFACTURER, MODEL_CAMERA
+from .brand import brand_icon_url
+from .const import (
+    CONF_RESTREAM_ENABLED,
+    DOMAIN,
+    MANUFACTURER,
+    MODEL_CAMERA,
+)
 from .coordinator import EgdsCoordinator
+from .restream import (
+    frigate_input_url,
+    register_restream,
+    unregister_restream_entity,
+)
 from .diag import warn_limited
 
 _LOGGER = logging.getLogger(__name__)
@@ -79,6 +90,7 @@ class EgdsBarrierCamera(CoordinatorEntity, Camera):
         self._barrier = barrier
         self._cam = cam
         guid = str(cam.get("guid") or cam.get("id"))
+        self._guid = guid
         bar_id = str(barrier["barrier_id"])
         self._attr_unique_id = f"{entry_id}_cam_{bar_id}_{guid}"
         name_parts = [barrier.get("address_name") or f"КПУ {bar_id}"]
@@ -103,6 +115,11 @@ class EgdsBarrierCamera(CoordinatorEntity, Camera):
         return f"{base} · {self._cam.get('name') or 'Камера'}"
 
     @property
+    def entity_picture(self) -> str | None:
+        """Иконка интеграции (приложение ЕГДС + логотип HA)."""
+        return brand_icon_url()
+
+    @property
     def extra_state_attributes(self) -> dict[str, Any]:
         attrs = {
             "camera_guid": self._cam.get("guid"),
@@ -115,6 +132,10 @@ class EgdsBarrierCamera(CoordinatorEntity, Camera):
             "barrier_id": self._barrier.get("barrier_id"),
             "address_name": self._barrier.get("address_name"),
         }
+        # Готовый вход для config.yml Frigate (если рестрим включён в опциях)
+        entry = self.coordinator.entry
+        if entry.options.get(CONF_RESTREAM_ENABLED, False):
+            attrs["frigate_input"] = frigate_input_url(entry, self._guid)
         # URL без учётных данных — атрибуты видны в интерфейсе
         return attrs
 
@@ -184,6 +205,14 @@ class EgdsBarrierCamera(CoordinatorEntity, Camera):
             await response.write_eof()
         return response
 
+    async def async_added_to_hass(self) -> None:
+        await Camera.async_added_to_hass(self)
+        await CoordinatorEntity.async_added_to_hass(self)
+        entry = self.coordinator.entry
+        if entry.options.get(CONF_RESTREAM_ENABLED, False):
+            register_restream(self.hass, entry.entry_id, self._guid, self)
+
     async def async_will_remove_from_hass(self) -> None:
+        unregister_restream_entity(self.hass, self.coordinator.entry.entry_id, self._guid)
         await Camera.async_will_remove_from_hass(self)
         await CoordinatorEntity.async_will_remove_from_hass(self)

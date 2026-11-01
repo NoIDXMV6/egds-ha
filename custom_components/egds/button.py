@@ -12,6 +12,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .brand import brand_icon_url
 from .const import DOMAIN, MANUFACTURER, MODEL_BARRIER
 from .coordinator import EgdsCoordinator
 from .entity_registry import register_open_entity, unregister_open_entity
@@ -38,6 +39,7 @@ class EgdsOpenButton(CoordinatorEntity, ButtonEntity):
     _attr_has_entity_name = True
     _attr_name = "Открыть"
     _attr_icon = "mdi:boom-gate-arrow-up-outline"
+    _attr_entity_picture = brand_icon_url()
 
     def __init__(
         self,

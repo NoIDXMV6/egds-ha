@@ -57,7 +57,11 @@
           "cooldown": "Пауза между командами, сек",
           "video_framerate": "Кадров/с в MJPEG-потоке",
           "video_width": "viewSize потока (пусто — не передавать)",
-          "video_ssl_verify": "Проверять TLS-сертификаты камер (обычно выключено)"
+          "video_ssl_verify": "Проверять TLS-сертификаты камер (обычно выключено)",
+          "restream_enabled": "Локальный рестрим видео для NVR (Frigate)"
+        },
+        "data_description": {
+          "restream_enabled": "Раздаёт живой поток камеры по локальному адресу http://homeassistant:8123/api/egds/restream/… (защищено токеном) для детекции машин во Frigate. Готовый адрес появится в атрибутах камеры (frigate_input)."
         }
       }
     }

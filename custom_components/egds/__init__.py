@@ -11,9 +11,11 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.service import async_extract_entity_ids
 
+from .brand import BrandIconView
 from .const import DOMAIN, PLATFORMS
 from .coordinator import EgdsCoordinator
 from .entity_registry import OPEN_ENTITIES
+from .restream import RestreamView, ensure_restream_token
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,6 +43,15 @@ async def _async_handle_open_barrier(call: ServiceCall) -> None:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Настройка интеграции из UI."""
+    # Бренд-иконка и локальный рестрим для NVR — общие для всех записей
+    if not hass.data.get(f"{DOMAIN}_views_registered"):
+        hass.http.register_view(BrandIconView())
+        hass.http.register_view(RestreamView())
+        hass.data[f"{DOMAIN}_views_registered"] = True
+
+    # Токен рестрима (создаётся при первом включении опции)
+    ensure_restream_token(hass, entry)
+
     coordinator = EgdsCoordinator(hass, entry)
 
     # Первое подключение: токены уже получены в config_flow

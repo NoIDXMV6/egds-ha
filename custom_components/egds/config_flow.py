@@ -24,11 +24,13 @@ from .api import EgdsAuthError, EgdsClient, EgdsDeliveryError, EgdsError, normal
 from .const import (
     COOLDOWN,
     CONF_API_BASE,
+    CONF_RESTREAM_ENABLED,
     CONF_TOKEN_EXPIRES,
     DEFAULT_COOLDOWN,
     DEFAULT_OPEN_DURATION,
     DEFAULT_OPENING_TIME,
     DEFAULT_POLL_INTERVAL,
+    DEFAULT_RESTREAM_ENABLED,
     DEFAULT_VIDEO_FRAMERATE,
     DEFAULT_VIDEO_SSL_VERIFY,
     DOMAIN,
@@ -104,6 +106,9 @@ OPTIONS_SCHEMA = vol.Schema(
         vol.Optional(VIDEO_WIDTH, default=""): str,
         vol.Required(
             VIDEO_SSL_VERIFY, default=DEFAULT_VIDEO_SSL_VERIFY
+        ): bool,
+        vol.Required(
+            CONF_RESTREAM_ENABLED, default=DEFAULT_RESTREAM_ENABLED
         ): bool,
     }
 )
@@ -340,6 +345,9 @@ class EgdsOptionsFlow(OptionsFlow):
             VIDEO_FRAMERATE: options.get(VIDEO_FRAMERATE, DEFAULT_VIDEO_FRAMERATE),
             VIDEO_WIDTH: options.get(VIDEO_WIDTH, ""),
             VIDEO_SSL_VERIFY: options.get(VIDEO_SSL_VERIFY, DEFAULT_VIDEO_SSL_VERIFY),
+            CONF_RESTREAM_ENABLED: options.get(
+                CONF_RESTREAM_ENABLED, DEFAULT_RESTREAM_ENABLED
+            ),
         }
         return self.async_show_form(
             step_id="options",
