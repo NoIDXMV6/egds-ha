@@ -6,7 +6,8 @@
   ],
   "config_flow": true,
   "dependencies": [
-    "camera"
+    "camera",
+    "http"
   ],
   "documentation": "https://github.com/NoIDXMV6/egds-ha",
   "integration_type": "hub",
@@ -16,5 +17,5 @@
     "custom_components.egds"
   ],
   "requirements": [],
-  "version": "1.0.10"
+  "version": "1.0.11"
 }

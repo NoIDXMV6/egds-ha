@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.11
+
+- **`http` добавлен в `dependencies` манифеста** — правка по ревью HACS
+  (hassfest: «Using component http but it's not in 'dependencies' or
+  'after_dependencies'»). Интеграция «ЕГДС» регистрирует HTTP-view
+  (`hass.http.register_view`: локальный рестрим MJPEG для Frigate/NVR и
+  бренд-иконка), поэтому компонент `http` обязан быть настроен до загрузки
+  интеграции. Поведение не меняется; релиз — для пере-проверки заявки HACS.
+
 ## 1.0.10
 
 - **Оригинальная иконка приложения ЕГДС с логотипом Home Assistant
