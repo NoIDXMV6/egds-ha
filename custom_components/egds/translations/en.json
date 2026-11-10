@@ -49,21 +49,30 @@
         }
       },
       "options": {
-        "title": "Polling, timing and video options",
+        "title": "Параметры опроса, таймингов и видео",
+        "description": "Вход Frigate (config.yml → ffmpeg → inputs → path): `{frigate_url}`. Адрес и токен показываются только на этом экране (доступен администраторам) — в атрибутах камеры и журнале их нет.",
         "data": {
-          "scan_interval": "Server polling interval, s",
-          "opening_time": "\"Opening\", s",
-          "open_duration": "\"Open\", s",
-          "cooldown": "Pause between commands, s",
-          "video_framerate": "MJPEG framerate",
-          "video_width": "Stream viewSize (empty = not sent)",
-          "video_ssl_verify": "Verify camera TLS certificates (usually off)",
-          "restream_enabled": "Local video restream for NVR (Frigate)"
+          "scan_interval": "Интервал опроса сервера, сек",
+          "opening_time": "«Открывается», сек",
+          "open_duration": "«Открыто», сек",
+          "cooldown": "Пауза между командами, сек",
+          "video_framerate": "Кадров/с в MJPEG-потоке",
+          "video_width": "viewSize потока (пусто — не передавать)",
+          "video_ssl_verify": "Проверять TLS-сертификаты камер (обычно выключено)",
+          "restream_enabled": "Локальный рестрим видео для NVR (Frigate)",
+          "restream_regenerate_token": "Перевыпустить токен рестрима"
         },
         "data_description": {
-          "restream_enabled": "Serves the camera live stream at http://homeassistant:8123/api/egds/restream/… (token protected) for Frigate detection. The ready-to-use address appears in the camera attributes (frigate_input)."
+          "restream_enabled": "Раздаёт живой поток камеры по локальному адресу http://homeassistant:8123/api/egds/restream/… (защищено случайным токеном) для детекции машин во Frigate. Готовый вход показывается в описании сверху после сохранения; CAMERA_GUID камеры — в атрибуте camera_guid.",
+          "restream_regenerate_token": "Сгенерировать новый токен вместо текущего (в опции не сохраняется). Прежние ссылки Frigate перестанут работать — обновите config.yml. Тот же эффект даёт сервис egds.regenerate_restream_token."
         }
       }
+    }
+  },
+  "services": {
+    "regenerate_restream_token": {
+      "name": "Перевыпустить токен рестрима",
+      "description": "Генерирует новый случайный токен для локального рестрима видео (вход Frigate). После перевыпуска прежние ссылки перестают работать — новый вход показывается в опциях интеграции. Токен нигде не публикуется (ни в атрибутах, ни в журнале)."
     }
   }
 }

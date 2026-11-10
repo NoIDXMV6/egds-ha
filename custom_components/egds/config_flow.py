@@ -21,10 +21,12 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import voluptuous as vol
 
 from .api import EgdsAuthError, EgdsClient, EgdsDeliveryError, EgdsError, normalize_phone
+from .restream import frigate_input_url, rotate_restream_token
 from .const import (
     COOLDOWN,
     CONF_API_BASE,
     CONF_RESTREAM_ENABLED,
+    CONF_RESTREAM_REGENERATE,
     CONF_TOKEN_EXPIRES,
     DEFAULT_COOLDOWN,
     DEFAULT_OPEN_DURATION,
@@ -110,6 +112,7 @@ OPTIONS_SCHEMA = vol.Schema(
         vol.Required(
             CONF_RESTREAM_ENABLED, default=DEFAULT_RESTREAM_ENABLED
         ): bool,
+        vol.Optional(CONF_RESTREAM_REGENERATE, default=False): bool,
     }
 )
 
@@ -333,10 +336,17 @@ class EgdsOptionsFlow(OptionsFlow):
         return self.async_show_menu(step_id="init", menu_options=["options", "reauth"])
 
     async def async_step_options(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Параметры опроса, таймингов и видео."""
+        """Параметры опроса, таймингов и видео + управление токеном рестрима."""
         if user_input is not None:
+            # Одноразовый чекбокс: перевыпустить токен рестрима.
+            # Не сохраняется в опции; новый токен попадает в entry.data,
+            # сработает update listener и интеграция перезагрузится —
+            # прежние ссылки Frigate сразу перестают работать.
+            if user_input.pop(CONF_RESTREAM_REGENERATE, False):
+                rotate_restream_token(self.hass, self.config_entry)
             return self.async_create_entry(title="", data=user_input)
-        options = self.config_entry.options
+        entry = self.config_entry
+        options = entry.options
         defaults = {
             SCAN_INTERVAL: options.get(SCAN_INTERVAL, DEFAULT_POLL_INTERVAL),
             OPENING_TIME: options.get(OPENING_TIME, DEFAULT_OPENING_TIME),
@@ -348,10 +358,20 @@ class EgdsOptionsFlow(OptionsFlow):
             CONF_RESTREAM_ENABLED: options.get(
                 CONF_RESTREAM_ENABLED, DEFAULT_RESTREAM_ENABLED
             ),
+            CONF_RESTREAM_REGENERATE: False,
         }
+        # Готовый вход Frigate показываем ТОЛЬКО здесь: экран options
+        # flow доступен только администраторам HA. Токен намеренно не
+        # публикуется в атрибутах сущностей (видны всем пользователям,
+        # попадают в recorder и шаблоны) и не пишется в журнал.
+        frigate_url = frigate_input_url(entry, "{CAMERA_GUID}")
         return self.async_show_form(
             step_id="options",
             data_schema=self.add_suggested_values_to_schema(OPTIONS_SCHEMA, defaults),
+            description_placeholders={
+                "frigate_url": frigate_url
+                or "включите «Локальный рестрим», сохраните и откройте опции снова — здесь появится готовый адрес",
+            },
         )
 
     async def async_step_reauth(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:

@@ -49,3 +49,6 @@ DEFAULT_VIDEO_SSL_VERIFY = False  # сертификаты камер самоп
 CONF_RESTREAM_ENABLED = "restream_enabled"
 DEFAULT_RESTREAM_ENABLED = False
 CONF_RESTREAM_TOKEN = "restream_token"
+# Одноразовый чекбокс в options flow: перевыпустить токен рестрима
+# (в сохранённые опции не попадает, обрабатывается в config_flow)
+CONF_RESTREAM_REGENERATE = "restream_regenerate_token"

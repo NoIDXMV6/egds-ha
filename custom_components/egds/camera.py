@@ -41,7 +41,6 @@ from .const import (
 )
 from .coordinator import EgdsCoordinator
 from .restream import (
-    frigate_input_url,
     register_restream,
     unregister_restream_entity,
 )
@@ -132,11 +131,11 @@ class EgdsBarrierCamera(CoordinatorEntity, Camera):
             "barrier_id": self._barrier.get("barrier_id"),
             "address_name": self._barrier.get("address_name"),
         }
-        # Готовый вход для config.yml Frigate (если рестрим включён в опциях)
-        entry = self.coordinator.entry
-        if entry.options.get(CONF_RESTREAM_ENABLED, False):
-            attrs["frigate_input"] = frigate_input_url(entry, self._guid)
-        # URL без учётных данных — атрибуты видны в интерфейсе
+        # URL без учётных данных — атрибуты видны в интерфейсе.
+        # Токен рестрима в атрибутах НЕ публикуется (виден всем
+        # пользователям HA и попадает в recorder/шаблоны) — готовый
+        # вход Frigate показывается только в options flow интеграции
+        # (экран доступен только администраторам).
         return attrs
 
     # ------------------------------------------------------------------ #

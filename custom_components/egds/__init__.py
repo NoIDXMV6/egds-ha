@@ -12,10 +12,10 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.service import async_extract_entity_ids
 
 from .brand import BrandIconView
-from .const import DOMAIN, PLATFORMS
+from .const import CONF_RESTREAM_ENABLED, DOMAIN, PLATFORMS
 from .coordinator import EgdsCoordinator
 from .entity_registry import OPEN_ENTITIES
-from .restream import RestreamView, ensure_restream_token
+from .restream import RestreamView, ensure_restream_token, rotate_restream_token
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,11 +41,31 @@ async def _async_handle_open_barrier(call: ServiceCall) -> None:
         raise HomeAssistantError("; ".join(errors))
 
 
+async def _async_handle_regenerate_restream_token(call: ServiceCall) -> None:
+    """Сервис egds.regenerate_restream_token — перевыпустить токен рестрима.
+
+    Токен хранится в entry.data и никогда не попадает в журнал,
+    атрибуты сущностей или диагностику. После ротации интеграция
+    перезагружается (update listener) — прежние ссылки Frigate
+    перестают работать сразу.
+    """
+    rotated = 0
+    for entry in call.hass.config_entries.async_entries(DOMAIN):
+        if not entry.options.get(CONF_RESTREAM_ENABLED, False):
+            continue
+        if rotate_restream_token(call.hass, entry):
+            rotated += 1
+    if not rotated:
+        raise HomeAssistantError(
+            "Нет записей с включённым «Локальный рестрим» — токен не перевыпущен"
+        )
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Настройка интеграции из UI."""
     # Бренд-иконка и локальный рестрим для NVR — общие для всех записей
     if not hass.data.get(f"{DOMAIN}_views_registered"):
-        hass.http.register_view(BrandIconView())
+        hass.http.register_view(BrandIconView(hass))
         hass.http.register_view(RestreamView())
         hass.data[f"{DOMAIN}_views_registered"] = True
 
@@ -66,6 +86,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not hass.services.has_service(DOMAIN, "open_barrier"):
         hass.services.async_register(
             DOMAIN, "open_barrier", _async_handle_open_barrier, OPEN_BARRIER_SCHEMA
+        )
+        hass.services.async_register(
+            DOMAIN, "regenerate_restream_token", _async_handle_regenerate_restream_token
         )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

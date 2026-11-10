@@ -12,10 +12,14 @@ HTTP — этого входа достаточно для детекции ма
           input_args: preset-http-mjpeg
           roles: [detect]
 
-Доступ: адрес без авторизации HA, но защищён случайным токеном
-(CONF_RESTREAM_TOKEN), который генерируется один раз при включении
-«Локальный рестрим» в опциях интеграции и показывается в атрибуте
-frigate_input камеры. Рестрим по умолчанию выключен.
+Доступ: адрес без авторизации HA (Frigate не умеет слать заголовки
+авторизации), но защищён случайным токеном (CONF_RESTREAM_TOKEN),
+который создаётся при включении «Локальный рестрим» в опциях
+интеграции и может быть перевыпущен (чекбокс в options flow или
+сервис {DOMAIN}.regenerate_restream_token). Токен не публикуется в
+атрибутах сущностей и не пишется в журнал: готовый вход Frigate
+показывается только в options flow (экран доступен только
+администраторам). Рестрим по умолчанию выключен.
 """
 from __future__ import annotations
 
@@ -47,8 +51,31 @@ def ensure_restream_token(hass: HomeAssistant, entry: ConfigEntry) -> str | None
     return token
 
 
+def rotate_restream_token(hass: HomeAssistant, entry: ConfigEntry) -> str | None:
+    """Перевыпустить токен рестрима записи.
+
+    Новый токен сохраняется в entry.data — сработает update listener
+    и интеграция перезагрузится, после чего старый токен перестаёт
+    действовать (сравнение идёт по актуальной записи).
+
+    Возвращает новый токен (или None, если рестрим выключен).
+    """
+    if not entry.options.get(CONF_RESTREAM_ENABLED, False):
+        return None
+    token = secrets.token_urlsafe(24)
+    hass.config_entries.async_update_entry(
+        entry, data={**entry.data, CONF_RESTREAM_TOKEN: token}
+    )
+    return token
+
+
 def frigate_input_url(entry: ConfigEntry, key: str) -> str | None:
-    """Готовый вход для config.yml Frigate (или None, если рестрим выключен)."""
+    """Готовый вход для config.yml Frigate (или None, если рестрим выключен).
+
+    Используется ТОЛЬКО в options flow (экран доступен только
+    администраторам): токен не должен попадать в атрибуты сущностей,
+    журнал и диагностику.
+    """
     token = entry.data.get(CONF_RESTREAM_TOKEN)
     if not token:
         return None
