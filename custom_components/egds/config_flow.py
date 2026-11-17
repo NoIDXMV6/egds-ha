@@ -88,6 +88,14 @@ STEP_CODE_SCHEMA = vol.Schema(
     }
 )
 
+# Reauth: шаг 1 — телефон (предзаполнен и редактируется: если номер
+# сменился, код уйдёт на новый), шаг 2 — код (STEP_CODE_SCHEMA)
+STEP_REAUTH_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_USERNAME): str,
+    }
+)
+
 OPTIONS_SCHEMA = vol.Schema(
     {
         vol.Required(SCAN_INTERVAL, default=DEFAULT_POLL_INTERVAL): vol.All(
@@ -253,33 +261,77 @@ class EgdsConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_reauth(self, entry_data: dict[str, Any]) -> ConfigFlowResult:
+        """Reauth: сначала показать телефон (можно изменить), потом код.
+
+        Код НЕ запрашивается автоматически при старте потока: раньше он
+        уходил сразу (до того, как пользователь откроет форму и
+        подтвердит номер), и если в записи хранился устаревший телефон,
+        SMS уходила не туда, а пользователь не мог этого увидеть или
+        исправить — повторная авторизация не проходила.
+        """
         self.data = dict(entry_data)
-        # Сразу высылаем новый код (как при первом входе) — пользователю
-        # остаётся только ввести его. Если доставка не настроена — покажем
-        # инструкцию вместо формы.
-        client = _make_client(self.hass, self.data)
-        try:
-            await client.request_sms_code()
-            self.data["code_status"] = (
-                "Новый код отправлен (SMS, звонок, бот или email — как "
-                "настроено для аккаунта; код звонка — последние 4 цифры "
-                "номера звонившего). Введите его ниже."
-            )
-        except EgdsDeliveryError:
-            self.data["code_status"] = STATUS_NO_DELIVERY
-        except EgdsError as err:
-            self.data["code_status"] = (
-                f"Не удалось выслать код автоматически: {err}. "
-                "Отметьте «Выслать код повторно» и попробуйте ещё раз."
-            )
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Reauth: ввести код (запрошен автоматически при старте)."""
+        """Шаг 1 reauth: телефон (предзаполнен, редактируется) → выслать код."""
+        errors: dict[str, str] = {}
+        entry_phone = str(self.data.get(CONF_USERNAME, ""))
+        status = (
+            "Сессия истекла. Ниже — телефон аккаунта; если номер сменился, "
+            "исправьте его, и код будет выслан на новый номер. Код доставляется "
+            "способом, подключённым для аккаунта: SMS, звонок (код — последние "
+            "4 цифры номера звонившего), бот Telegram/MAX или email. Если SMS "
+            "не пришла — проверьте звонок и ботов, подключить каналы можно в "
+            "приложении ЕГДС («Настройки уведомлений»)."
+        )
+        if user_input is not None:
+            phone = normalize_phone(user_input[CONF_USERNAME])
+            if phone != entry_phone:
+                # Номер сменился: проверяем, что такой аккаунт ещё не настроен
+                self._async_abort_stale_flows(phone)
+                await self.async_set_unique_id(phone, raise_on_progress=False)
+                self._abort_if_unique_id_configured()
+            self.data[CONF_USERNAME] = phone
+            client = _make_client(self.hass, self.data)
+            try:
+                await client.request_sms_code()
+            except EgdsDeliveryError as err:
+                # Показываем форму кода всё равно: пользователь может
+                # подключить канал и нажать «Выслать код повторно»
+                self.data["code_status"] = STATUS_NO_DELIVERY
+                _LOGGER.debug("Нет каналов доставки: %s", err)
+                return await self.async_step_reauth_code()
+            except EgdsAuthError as err:
+                errors["base"] = "sms_failed"
+                status = STATUS_SMS_BROKEN + f" Ответ сервера: {err}"
+                _LOGGER.debug("SMS не отправлено: %s", err)
+            except EgdsError as err:
+                errors["base"] = "cannot_connect"
+                status = f"Ошибка связи: {err}"
+                _LOGGER.debug("Ошибка связи: %s", err)
+            else:
+                self.data["code_status"] = (
+                    f"Код выслан на {phone} (SMS, звонок, бот или email — как "
+                    "настроено для аккаунта; код звонка — последние 4 цифры "
+                    "номера звонившего). Введите его ниже."
+                )
+                return await self.async_step_reauth_code()
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=self.add_suggested_values_to_schema(
+                STEP_REAUTH_SCHEMA, {CONF_USERNAME: entry_phone}
+            ),
+            errors=errors or None,
+            description_placeholders={"status": status},
+        )
+
+    async def async_step_reauth_code(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Шаг 2 reauth: ввести код (запрошен после подтверждения телефона)."""
         errors: dict[str, str] = {}
         status = str(
             self.data.get("code_status")
-            or "Сессия истекла. Введите новый код доставки."
+            or "Введите код доставки. Если код не пришёл — отметьте "
+            "«Выслать код повторно»."
         )
         if user_input is not None:
             client = _make_client(self.hass, self.data)
@@ -312,13 +364,20 @@ class EgdsConfigFlow(ConfigFlow, domain=DOMAIN):
                     if client.token_expires is not None:
                         self.data[CONF_TOKEN_EXPIRES] = client.token_expires
                     entry = self._get_reauth_entry()
-                    self.hass.config_entries.async_update_entry(entry, data=self.data)
+                    phone = str(self.data.get(CONF_USERNAME, ""))
+                    phone_changed = phone != entry.unique_id
+                    self.hass.config_entries.async_update_entry(
+                        entry,
+                        data=self.data,
+                        unique_id=phone if phone_changed else entry.unique_id,
+                    )
                     # перезагрузку выполняет update listener — явный reload
                     # здесь давал ДВОЙНОЙ перезапуск платформ (гонка при
                     # пересоздании камер после reauth)
                     return self.async_abort(reason="reauth_successful")
+        self.data["code_status"] = status
         return self.async_show_form(
-            step_id="reauth_confirm",
+            step_id="reauth_code",
             data_schema=STEP_CODE_SCHEMA,
             errors=errors or None,
             description_placeholders={"status": status},
