@@ -78,8 +78,14 @@ class EgdsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Свежие токены сразу сохраняем в запись (сервер ротонирует
         # refresh_token — потеря его означает повторный вход по SMS)
         self.client.on_tokens_update = self._persist_tokens
-        # Флаг «это обновление записи сделал я сам (токены) — не перезагружать»
-        self.suppress_reload = False
+        # Счётчик «это обновление записи сделал я сам (токены) — не
+        # перезагружать». Каждый вызов _persist_tokens порождает ровно один
+        # вызов update listener-а, поэтому счётчик точно парен
+        # сохранение/пропуск: булев флаг ломался при двух сохранениях
+        # подряд (проактивный refresh + refresh по 401 в одном цикле) —
+        # второй listener видел False и устраивал ЛИШНЮЮ перезагрузку
+        # интеграции (камеры отваливались на время).
+        self.suppress_reload = 0
         self.entry = entry
         self.last_open: dict[str, float] = {}
 
@@ -109,8 +115,9 @@ class EgdsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Сохранить обновлённые токены в запись конфигурации.
 
         Вызывается из колбэка клиента при каждом refresh/login. Запись
-        меняется без перезагрузки интеграции (suppress_reload) — клиент
-        уже работает с новыми токенами, а сохранение нужно только для
+        меняется без перезагрузки интеграции (suppress_reload — счётчик,
+        который погасит ровно один вызов update listener-а) — клиент уже
+        работает с новыми токенами, а сохранение нужно только для
         следующего старта HA.
         """
         entry = self.entry
@@ -122,7 +129,7 @@ class EgdsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             new_data[CONF_TOKEN_EXPIRES] = tokens["token_expires"]
         if new_data == entry.data:
             return
-        self.suppress_reload = True
+        self.suppress_reload += 1
         self.hass.config_entries.async_update_entry(entry, data=new_data)
         _LOGGER.debug("Обновлённые токены сохранены в запись конфигурации")
 

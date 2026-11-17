@@ -313,7 +313,9 @@ class EgdsConfigFlow(ConfigFlow, domain=DOMAIN):
                         self.data[CONF_TOKEN_EXPIRES] = client.token_expires
                     entry = self._get_reauth_entry()
                     self.hass.config_entries.async_update_entry(entry, data=self.data)
-                    await self.hass.config_entries.async_reload(entry.entry_id)
+                    # перезагрузку выполняет update listener — явный reload
+                    # здесь давал ДВОЙНОЙ перезапуск платформ (гонка при
+                    # пересоздании камер после reauth)
                     return self.async_abort(reason="reauth_successful")
         return self.async_show_form(
             step_id="reauth_confirm",

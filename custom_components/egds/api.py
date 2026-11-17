@@ -292,6 +292,11 @@ class EgdsClient:
                     payload: dict[str, Any] = await resp.json(content_type=None)
                 except ValueError:
                     payload = {}
+                if not isinstance(payload, dict):
+                    # сервер вернул 5xx/HTML без JSON (наблюдался живой
+                    # HTTP 500 с пустым телом) — иначе AttributeError
+                    # ронял reauth-поток с «Неизвестная ошибка»
+                    payload = {}
                 if resp.status == 200:
                     return payload
                 error = str(

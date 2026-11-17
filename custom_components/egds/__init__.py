@@ -81,7 +81,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Persist токенов мог произойти при первом refresh (до регистрации
     # слушателя) — сбрасываем флаг, чтобы последующие изменения опций
     # гарантированно перезагружали интеграцию
-    coordinator.suppress_reload = False
+    coordinator.suppress_reload = 0
 
     if not hass.services.has_service(DOMAIN, "open_barrier"):
         hass.services.async_register(
@@ -109,8 +109,10 @@ async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> Non
     работает с новыми токенами. Перезагружаем только при реальном
     изменении (опции, повторная авторизация).
     """
-    coordinator = entry.runtime_data
-    if getattr(coordinator, "suppress_reload", False):
-        coordinator.suppress_reload = False
+    coordinator = getattr(entry, "runtime_data", None)
+    # suppress_reload — счётчик: одно сохранение токенов гасит ровно один
+    # вызов listener-а (см. EgdsCoordinator._persist_tokens)
+    if coordinator is not None and getattr(coordinator, "suppress_reload", 0) > 0:
+        coordinator.suppress_reload -= 1
         return
     await hass.config_entries.async_reload(entry.entry_id)
