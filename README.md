@@ -2,6 +2,8 @@
 
 [![HACS: официальный каталог](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://github.com/hacs/default) [![Установить через HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=NoIDXMV6&repository=egds-ha&category=integration)
 
+[![Версия](https://img.shields.io/github/v/release/NoIDXMV6/egds-ha)](https://github.com/NoIDXMV6/egds-ha/releases/latest) [![Лицензия: MIT](https://img.shields.io/github/license/NoIDXMV6/egds-ha)](https://github.com/NoIDXMV6/egds-ha/blob/main/LICENSE) [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/) [![Home Assistant 2024.1+](https://img.shields.io/badge/Home%20Assistant-2024.1%2B-41BDF5?logo=homeassistant&logoColor=white)](https://www.home-assistant.io/) [![aiohttp](https://img.shields.io/badge/aiohttp-async%20HTTP-2C5AA2?logo=aiohttp&logoColor=white)](https://docs.aiohttp.org/) [![ffmpeg не требуется](https://img.shields.io/badge/ffmpeg-%D0%BD%D0%B5%20%D1%82%D1%80%D0%B5%D0%B1%D1%83%D0%B5%D1%82%D1%81%D1%8F-88A0A8)](https://github.com/NoIDXMV6/egds-ha#локальный-рестрим-для-frigate--nvr) [![Frigate](https://img.shields.io/badge/Frigate-%D0%BB%D0%BE%D0%BA%D0%B0%D0%BB%D1%8C%D0%BD%D1%8B%D0%B9%20%D1%80%D0%B5%D1%81%D1%82%D1%80%D0%B8%D0%BC%20NVR-2E7D32?logo=frigate&logoColor=white)](https://frigate.video/)
+
 ![Баннер](docs/banner.png)
 
 Управление шлагбаумами (КПУ) и просмотр живого видео с камер сервиса
