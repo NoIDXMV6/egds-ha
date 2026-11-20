@@ -1,9 +1,16 @@
 # Интеграция «ЕГДС» для Home Assistant
 
+[![HACS: официальный каталог](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://github.com/hacs/default) [![Установить через HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=NoIDXMV6&repository=egds-ha&category=integration)
+
 ![Баннер](docs/banner.png)
 
 Управление шлагбаумами (КПУ) и просмотр живого видео с камер сервиса
 **ЕГДС** (`client.egdsk.ru`) из Home Assistant.
+
+> Интеграция включена в **официальный каталог HACS**
+> ([hacs/default](https://github.com/hacs/default)) — она прошла ревью
+> команды HACS и устанавливается в один клик: кнопка-бейдж выше или
+> обычный поиск по слову «ЕГДС» в HACS.
 
 Интеграция построена на протоколе, восстановленном обратной разработкой
 официального приложения **ЕГДС 3.3.25** (Android, пакет
@@ -80,18 +87,19 @@ OAuth2-токены ЕГДС хранятся в записи конфигура
 
 ### Через HACS (рекомендуется)
 
-[![Открыть в HACS](https://img.shields.io/badge/HACS-Установить-0366d6?logo=homeassistant&logoColor=white)](https://my.home-assistant.io/redirect/hacs_repository/?owner=NoIDXMV6&repository=egds-ha&category=integration)
+[![Установить через HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=NoIDXMV6&repository=egds-ha&category=integration)
+
+Интеграция входит в стандартный каталог HACS — добавлять репозиторий
+вручную (custom repository) не нужно.
 
 1. Установите [HACS](https://hacs.xyz/docs/use/download/download/), если ещё не установлен.
-2. **HACS → Интеграции → поиск «ЕГДС»** — интеграция доступна в HACS
-   по умолчанию (после попадания в каталог hacs/default она находится
-   обычным поиском, без добавления репозитория).
-3. Если интеграция ещё не появилась в поиске (репозиторий в очереди
-   на включение в каталог), добавьте её как **custom repository**:
-   **HACS → ⋮ → Добавить свой репозиторий** → адрес
-   `https://github.com/NoIDXMV6/egds-ha`, категория — **Интеграция**.
-4. Установите «ЕГДС (шлагбаумы)» и перезапустите Home Assistant.
-5. **Настройки → Устройства и службы → Добавить интеграцию → ЕГДС**.
+2. **HACS → Интеграции → поиск «ЕГДС»** — интеграция находится обычным
+   поиском (она включена в официальный каталог
+   [hacs/default](https://github.com/hacs/default)). Либо установите
+   в один клик кнопкой выше: она откроет HACS в вашем Home Assistant
+   сразу на этой интеграции (сервис my.home-assistant.io).
+3. Установите «ЕГДС (шлагбаумы)» и перезапустите Home Assistant.
+4. **Настройки → Устройства и службы → Добавить интеграцию → ЕГДС**.
 
 ### Вручную
 
